@@ -15,15 +15,12 @@ def get_parcel(parcel_id: str) -> dict | None:
         response = table.get_item(Key={"parcel_id": parcel_id})
     except ClientError as e:
         error_code = e.response["Error"]["Code"]
-        metadata = e.response["ResponseMetadata"]
 
         logger.exception(
             "DynamoDB get_item failed",
             extra={
-                "aws_error_code": error_code,
-                "aws_request_id": metadata["RequestId"],
-                "http_status": metadata["HTTPStatusCode"],
-                "operation": "get_item"
+                "parcel_id": parcel_id,
+                "aws_error_code": error_code
             }
         )
         raise
