@@ -1,0 +1,40 @@
+name: Build and Deploy Lambda
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set environment
+        run: | 
+          echo "ENV=dev" >> $GITHUB_ENV
+          echo "VERSION=${GITHUB_SHA}" >> $GITHUB_ENV
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE }}
+          aws-region: us-east-1
+      
+      - name: Login to ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build Docker image
+        run: |
+          IMAGE_URI=${{ secrets.ACCOUNT_ID }}.dkr.ecr.us-east-1.amazonaws.com/parcel-dev:${VERSION}
+          docker build -t $IMAGE_URI .
+          echo "IMAGE_URI=$IMAGE_URI" >> $GITHUB_ENV
+
+      - name: Push Docker image
+        run: docker push $IMAGE_URI
+
+      - name: Update Lambda
+        run: |
+          aws lambda update-function-code --function-name parcel-dev-api --image-uri $IMAGE_URI

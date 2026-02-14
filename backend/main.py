@@ -41,4 +41,5 @@ def get_parcel_status():
 @logger.inject_lambda_context
 @tracer.capture_lambda_handler
 def lambda_handler(event: dict, context: LambdaContext):
+    logger.info("VERSION 2")
     return app.resolve(event, context)
