@@ -26,13 +26,16 @@ jobs:
         with:
           role-to-assume: ${{ secrets.AWS_ROLE }}
           aws-region: us-east-1
+
+      - name: Get AWS account ID
+        run: echo "ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)" >> $GITHUB_ENV
       
       - name: Login to ECR
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: Build Docker image
         run: |
-          IMAGE_URI=${{ secrets.ACCOUNT_ID }}.dkr.ecr.us-east-1.amazonaws.com/parcel-dev:${VERSION}
+          IMAGE_URI=${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/parcel-dev:${VERSION}
           docker build -t $IMAGE_URI .
           echo "IMAGE_URI=$IMAGE_URI" >> $GITHUB_ENV
 
