@@ -1,0 +1,11 @@
+FROM public.ecr.aws/lambda/python:3.12
+
+COPY requirements.txt .
+
+RUN pip install --no-cache-dir -r requirements.txt --target "${LAMBDA_TASK_ROOT}"
+
+COPY backend/ ${LAMBDA_TASK_ROOT}/backend/
+
+ENV PYTHONPATH="${LAMBDA_TASK_ROOT}/backend"
+
+CMD ["backend.main.lambda_handler"]
