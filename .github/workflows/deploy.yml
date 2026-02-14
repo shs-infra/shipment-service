@@ -36,7 +36,7 @@ jobs:
       - name: Build Docker image
         run: |
           IMAGE_URI=${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/parcel-dev:${VERSION}
-          docker build --platform linux/amd64 --provenance=false --format docker -t $IMAGE_URI .
+          docker build --platform linux/amd64 --provenance=false -t $IMAGE_URI .
           echo "IMAGE_URI=$IMAGE_URI" >> $GITHUB_ENV
 
       - name: Push Docker image
