@@ -2,46 +2,91 @@ name: Build and Deploy Lambda
 
 on:
   push:
-    branches: [ main ]
-
-permissions:
-  id-token: write
-  contents: read
+    branches: ["main"]
+  create:
+    tags:
+      - "v*"
 
 jobs:
-  deploy:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install -r requirements.txt
+      - run: pytest
+
+  build:
+    needs: test
     runs-on: ubuntu-latest
 
+    outputs:
+      image_uri: ${{ steps.build_image.outputs.image_uri }}
+
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set environment
-        run: | 
-          echo "ENV=dev" >> $GITHUB_ENV
-          echo "VERSION=${GITHUB_SHA}" >> $GITHUB_ENV
-
-      - name: Configure AWS credentials
+      - name: Configure AWS
         uses: aws-actions/configure-aws-credentials@v4
         with:
+          aws-region: ${{ vars.AWS_REGION }}
           role-to-assume: ${{ secrets.AWS_ROLE }}
-          aws-region: us-east-1
 
-      - name: Get AWS account ID
-        run: echo "ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)" >> $GITHUB_ENV
+      - name: Build & Push
+        id: build_image
+        run: |
+          IMAGE_URI=${{ secrets.AWS_ACCOUNT }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com/${{ vars.ECR_REPOSITORY }}:${{ github.sha }}
+
+          aws ecr get-login-password --region ${{ vars.AWS_REGION }} | docker login --username AWS --password-stdin ${{ secrets.AWS_ACCOUNT }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com
+
+          docker build -t $IMAGE_URI . 
+          docker push $IMAGE_URI
+        
+          echo "image_uri=$IMAGE_URI" >> $GITHUB_OUTPUT
+  
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: stage
+
+    steps:
+      - name: Configure AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ vars.AWS_REGION }}
+          role-to-assume: ${{ secrets.AWS_ROLE }}
       
-      - name: Login to ECR
-        uses: aws-actions/amazon-ecr-login@v2
-
-      - name: Build Docker image
+      - name: Deploy to STAGE
         run: |
-          IMAGE_URI=${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/parcel-dev:${VERSION}
-          docker build --platform linux/amd64 --provenance=false -t $IMAGE_URI .
-          echo "IMAGE_URI=$IMAGE_URI" >> $GITHUB_ENV
+          aws lambda update-function-code \
+            --function-name ${{ vars.FUNCTION_NAME }} \
+            --image-uri ${{ needs.build.outputs.image_uri }}
+      
+      - name: Integration test
+        run: curl -f https://<invoke_url_api_gateway>/health
 
-      - name: Push Docker image
-        run: docker push $IMAGE_URI
+  deploy-prod:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [deploy, build]
+    runs-on: ubuntu-latest
+    environment: production
 
-      - name: Update Lambda
+    steps:
+      - name: Configura AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ vars.AWS_REGION }}
+          role-to-assume: ${{ secrets.AWS_ROLE }}
+
+      - name: Deploy to prod
         run: |
-          aws lambda update-function-code --function-name parcel-dev-api --image-uri $IMAGE_URI
+          aws lambda update-function-code \
+            --function-name ${{ vars.FUNCTION_NAME }} \
+            --image-uri ${{ needs.build.outputs.image_uri }}
+
+      - name: Healthcheck
+        run: curl -f https://<invoke_url_api_gateway>/health
