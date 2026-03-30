@@ -52,3 +52,27 @@ def get_parcel(parcel_id: str, email: str, phone: str) -> dict | None:
             }
         )
         raise
+
+def save_parcel(parcel: dict) -> None:
+    parcel_id = parcel.get("parcel_id")
+
+    try:
+        table.put_item(Item=parcel)
+
+        logger.info(
+            "Parcel saved to DynamoDB",
+            extra={"parcel_id": parcel_id}
+        )
+
+    except ClientError as e:
+        error_code = e.response["Error"]["Code"]
+
+        logger.exception(
+            "DynamoDB put_item failed",
+            extra={
+                "parcel_id": parcel_id,
+                "aws_error_code": error_code
+            }
+        )
+
+        raise
