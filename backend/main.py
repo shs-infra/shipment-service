@@ -27,7 +27,7 @@ def get_parcel_status():
     try:
         data = StatusRequest(**body)
     except (ValidationError, TypeError):
-        logger.warning("Input validation failed - bypassed fronted or bot")
+        logger.warning("Input validation failed - bypassed frontend or bot")
         raise BadRequestError("Invalid input format")
 
     item = dynamo.get_parcel(data.parcel_id, data.email, data.phone)
@@ -41,5 +41,4 @@ def get_parcel_status():
 @logger.inject_lambda_context
 @tracer.capture_lambda_handler
 def lambda_handler(event: dict, context: LambdaContext):
-    logger.info("VERSION 2")
     return app.resolve(event, context)
