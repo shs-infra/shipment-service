@@ -3,15 +3,18 @@ name: Build and Deploy Lambda
 on:
   push:
     branches: ["main"]
-  create:
     tags:
       - "v*"
+
+permissions:
+  id-token: write
+  contents: read
 
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@4
+      - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
         with:
@@ -23,9 +26,10 @@ jobs:
   build:
     needs: test
     runs-on: ubuntu-latest
+    environment: dev
 
     outputs:
-      image_uri: ${{ steps.build_image.outputs.image_uri }}
+      image_tag: ${{ github.sha }}
 
     steps:
       - uses: actions/checkout@v4
@@ -35,7 +39,13 @@ jobs:
         with:
           aws-region: ${{ vars.AWS_REGION }}
           role-to-assume: ${{ secrets.AWS_ROLE }}
-
+      
+      - name: Login to ECR (dev)
+        run: |
+          aws ecr get-login-password --region ${{ vars.AWS_REGION }} \
+          | docker login --username AWS --password-stdin \
+          ${{ secrets.AWS_ACCOUNT }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com
+      
       - name: Build & Push
         id: build_image
         run: |
@@ -45,11 +55,29 @@ jobs:
 
           docker build -t $IMAGE_URI . 
           docker push $IMAGE_URI
-        
-          echo "image_uri=$IMAGE_URI" >> $GITHUB_OUTPUT
-  
-  deploy:
+
+  deploy-dev:
     needs: build
+    runs-on: ubuntu-latest
+    environment: dev
+
+    steps:
+      - name: Configure AWS (dev)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ vars.AWS_REGION }}
+          role-to-assume: ${{ secrets.AWS_ROLE }}
+
+      - name: Deploy to DEV
+        run: |
+          IMAGE_URI=${{ secrets.AWS_ACCOUNT }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com/${{ vars.ECR_REPOSITORY }}:${{ needs.build.outputs.image_tag }}
+
+          aws lambda update-function-code \
+            --function-name ${{ vars.FUNCTION_NAME }} \
+            --image-uri $IMAGE_URI
+
+  deploy-stage:
+    needs: [deploy-dev, build]
     runs-on: ubuntu-latest
     environment: stage
 
@@ -62,16 +90,18 @@ jobs:
       
       - name: Deploy to STAGE
         run: |
+          IMAGE_URI=${{ secrets.AWS_ACCOUNT }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com/${{ vars.ECR_REPOSITORY }}:${{ needs.build.outputs.image_tag }}
+          
           aws lambda update-function-code \
             --function-name ${{ vars.FUNCTION_NAME }} \
-            --image-uri ${{ needs.build.outputs.image_uri }}
+            --image-uri $IMAGE_URI
       
       - name: Integration test
         run: curl -f https://<invoke_url_api_gateway>/health
 
   deploy-prod:
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: [deploy, build]
+    if: startsWith(github.ref_name, 'v')
+    needs: [deploy-stage, build]
     runs-on: ubuntu-latest
     environment: production
 
@@ -84,9 +114,11 @@ jobs:
 
       - name: Deploy to prod
         run: |
+          IMAGE_URI=${{ secrets.AWS_ACCOUNT }}.dkr.ecr.${{ vars.AWS_REGION }}.amazonaws.com/${{ vars.ECR_REPOSITORY }}:${{ needs.build.outputs.image_tag }}
+          
           aws lambda update-function-code \
             --function-name ${{ vars.FUNCTION_NAME }} \
-            --image-uri ${{ needs.build.outputs.image_uri }}
+            --image-uri $IMAGE_URI
 
       - name: Healthcheck
         run: curl -f https://<invoke_url_api_gateway>/health
