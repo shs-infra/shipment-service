@@ -9,12 +9,10 @@ client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 HIGH_RISK = {"DELAYED", "FAILED", "LOST"}
 MEDIUM_RISK = {"IN_TRANSIT", "OUT_FOR_DELIVERY"}
 
+KNOWN_STATUSES = HIGH_RISK | MEDIUM_RISK | {"DELIVERED"}
+
 
 def classify(status: str) -> str:
-    """
-    Main classification entrypoint.
-    Uses rule-based logic first, optionally falls back to AI.
-    """
 
     status = status.upper()
 
@@ -24,13 +22,16 @@ def classify(status: str) -> str:
     if status in MEDIUM_RISK:
         return "medium"
 
-    if USE_AI:
+    if status == "DELIVERED":
+        return "low"
+
+    if status not in KNOWN_STATUSES and USE_AI:
         try:
             return classify_with_ai(status)
         except Exception as e:
-            logger.warning("AI classification failed, fallback to default", extra={"error": str(e)})
+            logger.warning("AI classification failed, fallback to default", extra={"status": status, "error": str(e)})
 
-    return "low"
+    return "medium"
 
 
 def classify_with_ai(status: str) -> str:
@@ -41,17 +42,20 @@ def classify_with_ai(status: str) -> str:
             {
                 "role": "system",
                 "content": (
-                    "You are a logistics classifier. "
-                    "Classify parcel status into one of: low, medium, high. "
-                    "Respond with only one word."
+                    "Classify parcel delivery risk.\n"
+                    "Return ONLY one word: low, medium, or high.\n"
+                    "High = delivery problems, delays, failures.\n"
+                    "Medium = still in progress.\n"
+                    "Low = successfully delivered."
                 )
             },
             {
                 "role": "user",
-                "content": f"Parcel status: {status}"
+                "content": f"Status: {status}"
             }
         ],
-        temperature=0
+        temperature=0,
+        timeout=2
     )
 
     result = response.choices[0].message.content.strip().lower()
