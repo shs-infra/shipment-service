@@ -4,6 +4,9 @@ from processor import process_parcel
 from db_sql import save_parcel as save_sql
 from dynamo import save_parcel as save_dynamo
 from logger_config import logger
+from aws_lambda_powertools import Metrics
+
+metrics = Metrics(namespace="ParcelPipeline")
 
 s3 = boto3.client("s3")
 
@@ -49,17 +52,29 @@ def process_batch(raw_data: list[dict]):
     if not isinstance(raw_data, list):
         raise ValueError("Invalid data format: expected list")
 
+    metrics.add_metric(name="BatchProcessed", unit="Count", value=1)
+    metrics.add_metric(name="BatchSize", unit="Count", value=len(raw_data))
+
     for raw in raw_data:
         try:
             processed = process_parcel(raw)
 
             logger.info("Processed parcel", extra=processed)
 
+            metrics.add_metric(name="ProcessedParcels", unit="Count", value=1)
+
+            if processed["risk_level"] == "high":
+                metrics.add_metric(name="HighRiskParcels", unit="Count", value=1)
+
             save_sql(processed)
             save_dynamo(processed)
+
+            metrics.add_metric(name="SavedParcels", unit="Count", value=1)
 
         except Exception as e:
             logger.exception(
                 "Failed to process parcel",
                 extra={"raw": raw, "error": str(e)}
             )
+
+            metrics.add_metric(name="FailedParcels", unit="Count", value=1)
