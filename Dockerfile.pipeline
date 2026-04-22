@@ -7,4 +7,4 @@ COPY backend/ ${LAMBDA_TASK_ROOT}/backend/
 
 ENV PYTHONPATH="${LAMBDA_TASK_ROOT}/backend"
 
-CMD ["backend.pipeline.lambda_handler"]
+CMD ["pipeline_entry.lambda_handler"]
