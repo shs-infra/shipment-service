@@ -1,39 +1,19 @@
-# Cloud Integration & Serverless Data Pipeline
+## Parcel Data Pipeline (AWS Serverless)
 
-Serverless data pipeline on AWS for processing and exposing parcel tracking data.
+Serverless data pipeline for ingesting and processing parcel tracking data. The architecture uses a dual-storage setup to support both fast API lookups and relational queries.
 
-## Overview
+## Core Architecture
 
-This project implements an end-to-end pipeline that ingests parcel data, processes and enriches it, applies classification logic, and exposes results via a REST API. The system is designed using AWS serverless services and containerized Lambda functions.
+The flow is event-driven, starting with S3 triggers that invoke Dockerized Python Lambdas. These handle normalization and risk classification, with an optional OpenAI fallback for handling unknown status values (controlled via USE_AI_CLASSIFIER).
 
-## Architecture
+    Storage: Data is written to DynamoDB (low-latency API access) and PostgreSQL/SQLAlchemy (relational queries).
+    API: Exposed via API Gateway with Pydantic validation for incoming requests.
 
-A scheduled EventBridge trigger invokes a pipeline Lambda function, which processes incoming parcel data and stores it in DynamoDB for fast API access and PostgreSQL for analytical queries. A separate Lambda function serves as an API layer behind API Gateway, enabling real-time parcel status retrieval.
+## DevOps
 
-## Processing
+    Observability: Logging, tracing, and metrics using AWS Lambda Powertools.
+    Infra: Managed via Terraform with CI/CD via GitHub Actions.
 
-Raw data is transformed into a structured format through a Python-based processing layer. This includes normalization of fields, enrichment with timestamps, and classification of parcel status. Classification is implemented using a hybrid approach combining rule-based logic with optional AI-based fallback using OpenAI.
+Env Vars: DB_URL, TABLE_NAME, OPENAI_API_KEY, USE_AI_CLASSIFIER.
 
-## Deployment
-
-The system uses two separate Docker-based Lambda functions. One handles API requests, while the other is responsible for scheduled data processing. This separation ensures clear responsibility boundaries and scalability.
-
-## Scheduling
-
-The pipeline is executed automatically using Amazon EventBridge with a configurable schedule, for example every five minutes.
-
-## Configuration
-
-Environment variables are used to configure database connections, API keys, and feature flags such as enabling or disabling AI-based classification.
-
-## Example
-
-The API accepts a parcel ID along with user credentials and returns the current parcel status. Data is validated and retrieved from DynamoDB with low latency.
-
-## Tech Stack
-
-AWS Lambda, API Gateway, DynamoDB, PostgreSQL, EventBridge, Python, Docker, SQLAlchemy, OpenAI API.
-
-## Design
-
-The system separates ingestion, processing, and API layers, uses a hybrid classification approach, and combines NoSQL and SQL relational storage to balance performance and analytical capabilities.
+Stack: Python, AWS (S3, Lambda, DynamoDB, API Gateway), PostgreSQL, Docker, Terraform.
